@@ -3,11 +3,16 @@ const express = require('express');
 // ... rest of your code
 const twilio = require('twilio');
 
-// Initialize Twilio client
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
+// Initialize Twilio client (optional - only if credentials provided)
+let client = null;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  client = twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN
+  );
+} else {
+  console.log('⚠️ Twilio not configured - SMS features disabled');
+}
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
