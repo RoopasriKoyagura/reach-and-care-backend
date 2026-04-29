@@ -1,31 +1,25 @@
-require('dotenv').config(); // Load this first!
-const express = require('express');
-// ... rest of your code
 const twilio = require('twilio');
 
 // Initialize Twilio client (optional - only if credentials provided)
 let client = null;
+console.log('Twilio SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
+console.log('Twilio Token exists:', !!process.env.TWILIO_AUTH_TOKEN);
 if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
   client = twilio(
     process.env.TWILIO_ACCOUNT_SID,
     process.env.TWILIO_AUTH_TOKEN
   );
+  console.log('✅ Twilio initialized successfully');
 } else {
-  console.log('⚠️ Twilio not configured - SMS features disabled');
+  console.log('⚠️ Twilio not configured - SMS/Call features disabled');
 }
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // ================================================
 // IVR TWIML - Telugu voice prompts
-// Uses Amazon Polly / Google TTS via Twilio's <Say>
-// For Telugu: voice="Polly.Aditi" or use <Play> with pre-recorded audio
 // ================================================
 
-/**
- * Initial IVR greeting in Telugu
- * Called when elderly person calls the helpline
- */
 exports.generateGreetingTwiml = () => {
   const twiml = new VoiceResponse();
   const gather = twiml.gather({
@@ -35,21 +29,16 @@ exports.generateGreetingTwiml = () => {
     timeout: 10,
   });
 
-  // Telugu text using Twilio's built-in TTS (Polly.Aditi is Hindi/Indian English)
-  // For proper Telugu, use pre-recorded audio files hosted on your server
   gather.say(
-    {
-      voice: 'Polly.Aditi',
-      language: 'hi-IN', // Closest supported; use pre-recorded Telugu audio for production
-    },
+    { voice: 'Polly.Aditi', language: 'hi-IN' },
     `నమస్కారం! రీచ్ అండ్ కేర్ హెల్ప్‌లైన్‌కి స్వాగతం. 
      అత్యవసర సహాయం కోసం వన్ నొక్కండి. 
      మందుల సహాయం కోసం టూ నొక్కండి. 
      నిత్యావసరాల సహాయం కోసం త్రీ నొక్కండి.`
   );
 
-  // If no input, repeat
-  twiml.say({ voice: 'Polly.Aditi', language: 'hi-IN' },
+  twiml.say(
+    { voice: 'Polly.Aditi', language: 'hi-IN' },
     'మీరు ఏ నంబర్ నొక్కలేదు. దయచేసి మళ్ళీ ప్రయత్నించండి.'
   );
   twiml.redirect('/api/ivr/welcome');
@@ -57,9 +46,6 @@ exports.generateGreetingTwiml = () => {
   return twiml.toString();
 };
 
-/**
- * Handle IVR digit input (1, 2, or 3)
- */
 exports.generateConfirmationTwiml = (digit, elderlyName) => {
   const twiml = new VoiceResponse();
 
@@ -70,16 +56,12 @@ exports.generateConfirmationTwiml = (digit, elderlyName) => {
   };
 
   const message = messages[digit] || `మీ అభ్యర్థన అందుకున్నాం. వాలంటీర్ వస్తారు.`;
-
   twiml.say({ voice: 'Polly.Aditi', language: 'hi-IN' }, message);
   twiml.hangup();
 
   return twiml.toString();
 };
 
-/**
- * Invalid input response
- */
 exports.generateInvalidInputTwiml = () => {
   const twiml = new VoiceResponse();
   const gather = twiml.gather({
@@ -100,10 +82,12 @@ exports.generateInvalidInputTwiml = () => {
 // SMS NOTIFICATIONS
 // ================================================
 
-/**
- * Send SMS to volunteer when new request arrives
- */
 exports.sendVolunteerAlert = async (volunteer, helpRequest, elderly) => {
+  if (!client) {
+    console.log('⚠️ Twilio not configured, skipping volunteer SMS');
+    return false;
+  }
+
   const requestTypeMap = {
     emergency: '🚨 అత్యవసర సహాయం',
     medicine: '🏥 మందుల సహాయం',
@@ -116,8 +100,7 @@ exports.sendVolunteerAlert = async (volunteer, helpRequest, elderly) => {
     `పెద్దల పేరు: ${elderly.fullName}\n` +
     `ఫోన్: ${elderly.phone}\n` +
     `గ్రామం: ${elderly.address.village || elderly.address.street}, ${elderly.address.district}\n\n` +
-    `అంగీకరించడానికి: ${process.env.FRONTEND_URL}/volunteer/accept/${helpRequest._id}\n` +
-    `రిజెక్ట్ చేయడానికి: ${process.env.FRONTEND_URL}/volunteer/decline/${helpRequest._id}`;
+    `అంగీకరించడానికి: ${process.env.FRONTEND_URL}/volunteer/accept/${helpRequest._id}`;
 
   try {
     await client.messages.create({
@@ -133,10 +116,12 @@ exports.sendVolunteerAlert = async (volunteer, helpRequest, elderly) => {
   }
 };
 
-/**
- * Send SMS with elderly details to volunteer after accepting
- */
 exports.sendElderlyDetailsToVolunteer = async (volunteer, elderly, helpRequest) => {
+  if (!client) {
+    console.log('⚠️ Twilio not configured, skipping elderly details SMS');
+    return false;
+  }
+
   const healthInfo =
     elderly.healthIssues && elderly.healthIssues.length > 0
       ? elderly.healthIssues.join(', ')
@@ -154,8 +139,7 @@ exports.sendElderlyDetailsToVolunteer = async (volunteer, elderly, helpRequest) 
     `రక్త గ్రూప్: ${elderly.bloodGroup || 'తెలియదు'}\n\n` +
     `👨‍👩‍👧 కుటుంబ సంప్రదింపు:\n` +
     `పేరు: ${elderly.registeredBy.name}\n` +
-    `ఫోన్: ${elderly.registeredBy.phone}\n\n` +
-    `పని పూర్తయిన తర్వాత OTP: /api/requests/${helpRequest._id}/complete`;
+    `ఫోన్: ${elderly.registeredBy.phone}`;
 
   try {
     await client.messages.create({
@@ -170,13 +154,15 @@ exports.sendElderlyDetailsToVolunteer = async (volunteer, elderly, helpRequest) 
   }
 };
 
-/**
- * Send OTP to volunteer for completion verification
- */
 exports.sendOtpSms = async (phone, otp) => {
+  if (!client) {
+    console.log(`⚠️ Twilio not configured, OTP is: ${otp}`);
+    return false;
+  }
+
   const message =
     `Reach & Care OTP: ${otp}\n` +
-    `పని పూర్తయిన తర్వాత ఈ OTP పెద్దలకు చెప్పండి లేదా వారి ఫోన్‌లో నమోదు చేయించండి.\n` +
+    `పని పూర్తయిన తర్వాత ఈ OTP నమోదు చేయండి.\n` +
     `OTP ${process.env.OTP_EXPIRY_MINUTES || 10} నిమిషాల్లో కాలం తీరిపోతుంది.`;
 
   try {
@@ -192,10 +178,12 @@ exports.sendOtpSms = async (phone, otp) => {
   }
 };
 
-/**
- * Send SMS to family after request raised
- */
 exports.notifyFamily = async (familyPhone, elderly, requestType) => {
+  if (!client) {
+    console.log('⚠️ Twilio not configured, skipping family SMS');
+    return false;
+  }
+
   const typeMap = {
     emergency: 'అత్యవసర సహాయం',
     medicine: 'మందుల సహాయం',
@@ -204,7 +192,7 @@ exports.notifyFamily = async (familyPhone, elderly, requestType) => {
 
   const message =
     `Reach & Care: ${elderly.fullName} ${typeMap[requestType]} కోసం హెల్ప్‌లైన్ కి కాల్ చేశారు.\n` +
-    `మీ పెద్దలకు సమీప వాలంటీర్ పంపుతున్నాం. దయచేసి మీ ఫోన్ అందుబాటులో ఉంచుకోండి.`;
+    `మీ పెద్దలకు సమీప వాలంటీర్ పంపుతున్నాం.`;
 
   try {
     await client.messages.create({
