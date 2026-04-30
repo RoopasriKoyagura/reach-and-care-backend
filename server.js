@@ -58,6 +58,7 @@ io.on('connection', (socket) => {
 // MIDDLEWARE
 // ================================
 app.use(helmet());
+app.set('trust proxy', 1);
 app.use(morgan('dev'));
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
